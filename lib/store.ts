@@ -7,6 +7,9 @@ const STORAGE_KEY = "sales-dashboard-v2";
 export interface AppSettings {
   tldvApiKey: string;
   tldvLastSync: string | null;
+  ghlApiKey: string;
+  ghlLocationId: string;
+  ghlLastSync: string | null;
 }
 
 export interface StoreData {
@@ -21,6 +24,9 @@ export interface StoreData {
 const defaultSettings: AppSettings = {
   tldvApiKey: "",
   tldvLastSync: null,
+  ghlApiKey: "",
+  ghlLocationId: "",
+  ghlLastSync: null,
 };
 
 const defaultData: StoreData = {

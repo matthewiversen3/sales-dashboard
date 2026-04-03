@@ -15,6 +15,7 @@ import {
   X,
   Sun,
   Moon,
+  Settings,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -25,6 +26,7 @@ const navItems = [
   { href: "/calls", label: "Calls", icon: Phone },
   { href: "/team", label: "Team", icon: Users },
   { href: "/reminders", label: "Reminders", icon: Bell },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function Sidebar() {

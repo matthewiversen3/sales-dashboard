@@ -11,7 +11,7 @@ export function useStore() {
     payments: [],
     reminders: [],
     calls: [],
-    settings: { tldvApiKey: "", tldvLastSync: null },
+    settings: { tldvApiKey: "", tldvLastSync: null, ghlApiKey: "", ghlLocationId: "", ghlLastSync: null },
   });
   const [loaded, setLoaded] = useState(false);
 
