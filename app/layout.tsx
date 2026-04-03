@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/sidebar";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { ThemeProvider } from "@/components/theme-provider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sales Dashboard",
-  description: "Sales commissions and payment tracking",
+  title: "AppRabbit | Sales Dashboard",
+  description: "Pipeline, commissions, and payment tracking for AppRabbit",
 };
 
 export default function RootLayout({
@@ -27,17 +27,18 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} h-full`}
+      suppressHydrationWarning
     >
-      <body className="min-h-full bg-gray-50/50">
-        <TooltipProvider>
+      <body className="min-h-full bg-background text-foreground">
+        <ThemeProvider>
           <Sidebar />
-          <main className="md:pl-56">
+          <main className="md:pl-[240px]">
             <div className="px-4 pt-16 pb-6 md:px-6 md:pt-6 md:pb-6">
               {children}
             </div>
           </main>
-        </TooltipProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

@@ -3,7 +3,7 @@
 import { useStore } from "@/lib/hooks";
 import { DealCard } from "@/components/deal-card";
 import { FilterChips } from "@/components/filter-chips";
-import { PIPELINE_STAGES, PipelineStage, PRODUCTS, PAYMENT_TYPES, Product, PaymentType } from "@/lib/types";
+import { PIPELINE_STAGES, PipelineStage, PRODUCTS, PAYMENT_TYPES, LEAD_SOURCES, Product, PaymentType, LeadSource } from "@/lib/types";
 import {
   addDeal,
   generatePaymentSchedule,
@@ -55,7 +55,7 @@ import { useDroppable, useDraggable } from "@dnd-kit/core";
 function DroppableColumn({ id, children }: { id: string; children: React.ReactNode }) {
   const { isOver, setNodeRef } = useDroppable({ id });
   return (
-    <div ref={setNodeRef} className={cn("flex-1 overflow-y-auto p-2 space-y-2 transition-colors rounded-b-xl", isOver && "bg-primary/5")}>
+    <div ref={setNodeRef} className={cn("flex-1 overflow-y-auto p-2.5 space-y-2 transition-colors rounded-b-2xl", isOver && "bg-primary/5")}>
       {children}
     </div>
   );
@@ -125,6 +125,8 @@ export default function BoardPage() {
   const [closeDate, setCloseDate] = useState(new Date().toISOString().split("T")[0]);
   const [notes, setNotes] = useState("");
   const [addStage, setAddStage] = useState<PipelineStage>("lead");
+  const [leadSource, setLeadSource] = useState<LeadSource>("Meta Ads");
+  const [setterId, setSetterId] = useState<string>("");
 
   if (!loaded) return <div className="animate-pulse h-96" />;
 
@@ -145,6 +147,8 @@ export default function BoardPage() {
     setCloseDate(new Date().toISOString().split("T")[0]);
     setNotes("");
     setAddStage("lead");
+    setLeadSource("Meta Ads");
+    setSetterId("");
   }
 
   function handleAddDeal(e: React.FormEvent) {
@@ -161,6 +165,8 @@ export default function BoardPage() {
       commissionPaid: 0,
       closeDate,
       stage: addStage,
+      leadSource,
+      setterId: setterId || null,
       notes,
       callIds: [],
     });
@@ -282,6 +288,34 @@ export default function BoardPage() {
                 </div>
               </div>
               <div className="space-y-1.5">
+                <Label className="text-xs">Lead Source</Label>
+                <div className="flex gap-1.5 flex-wrap">
+                  {LEAD_SOURCES.map((ls) => (
+                    <button type="button" key={ls} onClick={() => setLeadSource(ls)}
+                      className={cn("px-2.5 py-1.5 rounded-xl text-xs font-medium border transition-colors",
+                        leadSource === ls ? "bg-primary text-primary-foreground border-primary" : "bg-card text-muted-foreground border-border hover:border-foreground/20"
+                      )}>{ls}</button>
+                  ))}
+                </div>
+              </div>
+              {salespeople.some((sp) => sp.role === "setter") && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Set by</Label>
+                  <div className="flex gap-1.5">
+                    <button type="button" onClick={() => setSetterId("")}
+                      className={cn("px-2.5 py-1.5 rounded-xl text-xs font-medium border transition-colors",
+                        !setterId ? "bg-primary text-primary-foreground border-primary" : "bg-card text-muted-foreground border-border hover:border-foreground/20"
+                      )}>None</button>
+                    {salespeople.filter((sp) => sp.role === "setter").map((sp) => (
+                      <button type="button" key={sp.id} onClick={() => setSetterId(sp.id)}
+                        className={cn("px-2.5 py-1.5 rounded-xl text-xs font-medium border transition-colors",
+                          setterId === sp.id ? "bg-primary text-primary-foreground border-primary" : "bg-card text-muted-foreground border-border hover:border-foreground/20"
+                        )}>{sp.name}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="space-y-1.5">
                 <Label className="text-xs">Notes</Label>
                 <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes about this deal..." rows={2} />
               </div>
@@ -305,15 +339,15 @@ export default function BoardPage() {
               const stageTotal = stageDeals.reduce((s, d) => s + d.totalAmount, 0);
 
               return (
-                <div key={stage.key} className={cn("w-72 shrink-0 flex flex-col rounded-xl border", stage.color)}>
+                <div key={stage.key} className={cn("w-72 shrink-0 flex flex-col rounded-2xl border", stage.color, stage.darkColor)}>
                   {/* Column header */}
-                  <div className="px-3 py-2.5 border-b border-inherit">
+                  <div className="px-3.5 py-3 border-b border-inherit">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <h2 className="text-xs font-semibold uppercase tracking-wider">{stage.label}</h2>
-                        <span className="text-[10px] bg-white/60 px-1.5 py-0.5 rounded-full font-medium">{stageDeals.length}</span>
+                        <h2 className="text-[11px] font-semibold uppercase tracking-widest">{stage.label}</h2>
+                        <span className="text-[10px] bg-background/60 dark:bg-white/10 px-1.5 py-0.5 rounded-full font-medium tabular-nums">{stageDeals.length}</span>
                       </div>
-                      <span className="text-[10px] font-medium text-muted-foreground">{formatCurrency(stageTotal)}</span>
+                      <span className="text-[10px] font-medium text-muted-foreground tabular-nums">{formatCurrency(stageTotal)}</span>
                     </div>
                   </div>
 
@@ -364,10 +398,10 @@ export default function BoardPage() {
       {/* Deal Detail Panel (slide-over) */}
       {selectedDeal && (
         <>
-          <div className="fixed inset-0 bg-black/10 z-40" onClick={() => setDetailDeal(null)} />
-          <div className="fixed right-0 top-0 z-50 h-full w-full max-w-md bg-white border-l border-border shadow-xl overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-border px-5 py-3 flex items-center justify-between z-10">
-              <h2 className="text-sm font-semibold">{selectedDeal.clientName}</h2>
+          <div className="fixed inset-0 bg-black/20 dark:bg-black/40 backdrop-blur-[2px] z-40" onClick={() => setDetailDeal(null)} />
+          <div className="fixed right-0 top-0 z-50 h-full w-full max-w-md bg-card border-l border-border shadow-2xl overflow-y-auto">
+            <div className="sticky top-0 bg-card/95 backdrop-blur-sm border-b border-border px-5 py-3.5 flex items-center justify-between z-10">
+              <h2 className="text-sm font-semibold tracking-[-0.01em]">{selectedDeal.clientName}</h2>
               <div className="flex items-center gap-1">
                 <button onClick={() => handleDeleteDeal(selectedDeal.id)} className="p-1.5 rounded-md hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors">
                   <Trash2 className="h-4 w-4" />
@@ -454,6 +488,19 @@ export default function BoardPage() {
                   <span className="text-muted-foreground">Close Date</span>
                   <span className="font-medium">{formatDate(selectedDeal.closeDate)}</span>
                 </div>
+                <div className="flex justify-between py-1.5 border-b border-border">
+                  <span className="text-muted-foreground">Lead Source</span>
+                  <span className="font-medium">{selectedDeal.leadSource || "—"}</span>
+                </div>
+                {(() => {
+                  const setter = selectedDeal.setterId ? salespeople.find((s) => s.id === selectedDeal.setterId) : null;
+                  return setter ? (
+                    <div className="flex justify-between py-1.5 border-b border-border">
+                      <span className="text-muted-foreground">Set by</span>
+                      <span className="font-medium">{setter.name}</span>
+                    </div>
+                  ) : null;
+                })()}
               </div>
 
               {/* Notes */}

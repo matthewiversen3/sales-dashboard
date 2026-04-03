@@ -10,7 +10,7 @@ import {
   verifyPayment,
   linkCallToDeal,
 } from "./store";
-import type { PaymentType, PipelineStage, Product } from "./types";
+import type { PaymentType, PipelineStage, Product, LeadSource } from "./types";
 
 interface SeedDeal {
   clientName: string;
@@ -21,6 +21,8 @@ interface SeedDeal {
   commissionPaid: number;
   closeDate: string;
   stage: PipelineStage;
+  leadSource?: LeadSource;
+  setterId?: string;
   notes: string;
   verifyFirst?: boolean;
   verifyAll?: boolean;
@@ -30,9 +32,10 @@ const seedTeam = [
   { name: "Wayne", phone: "+15559201001", email: "wayne@apprabbit.com", role: "rep" as const },
   { name: "Josh", phone: "+15559201002", email: "josh@apprabbit.com", role: "rep" as const },
   { name: "Matthew", phone: "+15559201000", email: "matthew@apprabbit.com", role: "founder" as const },
+  { name: "Setter", phone: "+15559201003", email: "setter@apprabbit.com", role: "setter" as const },
 ];
 
-function getSeedDeals(wayneId: string, joshId: string, matthewId: string): (SeedDeal & { salespersonId: string })[] {
+function getSeedDeals(wayneId: string, joshId: string, matthewId: string, setterIdVal: string): (SeedDeal & { salespersonId: string })[] {
   return [
     // Wayne's deals
     {
@@ -45,6 +48,8 @@ function getSeedDeals(wayneId: string, joshId: string, matthewId: string): (Seed
       commissionPaid: 1000,
       closeDate: "2026-01-12",
       stage: "paid",
+      leadSource: "Referral",
+      setterId: setterIdVal,
       notes: "Great client. Referred by a friend.",
       verifyAll: true,
     },
@@ -58,6 +63,8 @@ function getSeedDeals(wayneId: string, joshId: string, matthewId: string): (Seed
       commissionPaid: 400,
       closeDate: "2026-02-15",
       stage: "collecting",
+      leadSource: "Meta Ads",
+      setterId: setterIdVal,
       notes: "First split paid. Waiting on second.",
       verifyFirst: true,
     },
@@ -71,6 +78,8 @@ function getSeedDeals(wayneId: string, joshId: string, matthewId: string): (Seed
       commissionPaid: 0,
       closeDate: "2026-03-20",
       stage: "closed",
+      leadSource: "Cold Outreach",
+      setterId: setterIdVal,
       notes: "Just closed. Invoice sent.",
     },
     {
@@ -83,6 +92,8 @@ function getSeedDeals(wayneId: string, joshId: string, matthewId: string): (Seed
       commissionPaid: 0,
       closeDate: "2026-03-28",
       stage: "proposal",
+      leadSource: "Meta Ads",
+      setterId: setterIdVal,
       notes: "Very interested. Sent proposal last week.",
     },
     {
@@ -95,6 +106,8 @@ function getSeedDeals(wayneId: string, joshId: string, matthewId: string): (Seed
       commissionPaid: 0,
       closeDate: "2026-04-01",
       stage: "lead",
+      leadSource: "Inbound",
+      setterId: setterIdVal,
       notes: "Discovery call done. Needs follow-up.",
     },
 
@@ -109,6 +122,8 @@ function getSeedDeals(wayneId: string, joshId: string, matthewId: string): (Seed
       commissionPaid: 900,
       closeDate: "2026-01-20",
       stage: "paid",
+      leadSource: "Referral",
+      setterId: setterIdVal,
       notes: "Smooth deal. Happy client.",
       verifyAll: true,
     },
@@ -224,7 +239,7 @@ export function seedDemoData() {
     reps[person.name] = sp.id;
   }
 
-  const deals = getSeedDeals(reps["Wayne"], reps["Josh"], reps["Matthew"]);
+  const deals = getSeedDeals(reps["Wayne"], reps["Josh"], reps["Matthew"], reps["Setter"]);
 
   const dealMap: Record<string, string> = {};
   for (const dealDef of deals) {
@@ -238,6 +253,8 @@ export function seedDemoData() {
       commissionPaid: dealDef.commissionPaid,
       closeDate: dealDef.closeDate,
       stage: dealDef.stage,
+      leadSource: dealDef.leadSource || "Meta Ads",
+      setterId: dealDef.setterId || null,
       notes: dealDef.notes,
       callIds: [],
     });

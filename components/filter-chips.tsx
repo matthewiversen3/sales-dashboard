@@ -16,10 +16,10 @@ export function FilterChips({ options, value, onChange }: FilterChipsProps) {
           key={opt.value}
           onClick={() => onChange(opt.value)}
           className={cn(
-            "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+            "px-3 py-1.5 rounded-xl text-[12px] font-medium transition-all duration-150",
             value === opt.value
-              ? "bg-primary text-primary-foreground"
-              : "bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground"
+              ? "bg-foreground text-background shadow-sm"
+              : "bg-muted text-muted-foreground hover:text-foreground"
           )}
         >
           {opt.label}

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, Pencil, Trash2, Phone, Mail, User, Crown } from "lucide-react";
+import { Plus, Pencil, Trash2, Phone, Mail, User, Crown, Headphones } from "lucide-react";
 import { useState } from "react";
 import { formatCurrency, formatPhone, pluralize } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -19,7 +19,7 @@ export default function TeamPage() {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<"rep" | "founder">("rep");
+  const [role, setRole] = useState<"rep" | "founder" | "setter">("rep");
 
   if (!loaded) return <div className="animate-pulse h-96" />;
 
@@ -84,10 +84,10 @@ export default function TeamPage() {
               <div className="space-y-1.5">
                 <Label className="text-xs">Role</Label>
                 <div className="flex gap-1.5">
-                  {(["rep", "founder"] as const).map((r) => (
+                  {(["rep", "setter", "founder"] as const).map((r) => (
                     <button type="button" key={r} onClick={() => setRole(r)}
-                      className={cn("px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors capitalize",
-                        role === r ? "bg-primary text-primary-foreground border-primary" : "bg-white text-muted-foreground border-border"
+                      className={cn("px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors capitalize",
+                        role === r ? "bg-foreground text-background border-foreground" : "bg-card text-muted-foreground border-border"
                       )}>{r}</button>
                   ))}
                 </div>
@@ -130,6 +130,7 @@ export default function TeamPage() {
                         <div className="flex items-center gap-1.5">
                           <p className="text-sm font-medium">{sp.name}</p>
                           {sp.role === "founder" && <Crown className="h-3 w-3 text-amber-500" />}
+                          {sp.role === "setter" && <Headphones className="h-3 w-3 text-blue-500" />}
                         </div>
                         <p className="text-xs text-muted-foreground">{spDeals.length} {pluralize(spDeals.length, "deal")}</p>
                       </div>

@@ -12,15 +12,19 @@ export type PaymentType =
   | "9K Climb"
   | "12K *";
 
+export type LeadSource = "Meta Ads" | "Referral" | "Cold Outreach" | "Inbound" | "GHL" | "Other";
+
 export type ReminderStatus = "pending" | "sent" | "failed";
 
-export const PIPELINE_STAGES: { key: PipelineStage; label: string; color: string }[] = [
-  { key: "lead", label: "Lead", color: "bg-blue-50 border-blue-200" },
-  { key: "proposal", label: "Proposal", color: "bg-purple-50 border-purple-200" },
-  { key: "closed", label: "Closed", color: "bg-amber-50 border-amber-200" },
-  { key: "collecting", label: "Collecting", color: "bg-orange-50 border-orange-200" },
-  { key: "paid", label: "Paid", color: "bg-emerald-50 border-emerald-200" },
+export const PIPELINE_STAGES: { key: PipelineStage; label: string; color: string; darkColor: string }[] = [
+  { key: "lead", label: "Lead", color: "bg-blue-50 border-blue-200", darkColor: "dark:bg-blue-950/30 dark:border-blue-800/40" },
+  { key: "proposal", label: "Proposal", color: "bg-purple-50 border-purple-200", darkColor: "dark:bg-purple-950/30 dark:border-purple-800/40" },
+  { key: "closed", label: "Closed", color: "bg-amber-50 border-amber-200", darkColor: "dark:bg-amber-950/30 dark:border-amber-800/40" },
+  { key: "collecting", label: "Collecting", color: "bg-orange-50 border-orange-200", darkColor: "dark:bg-orange-950/30 dark:border-orange-800/40" },
+  { key: "paid", label: "Paid", color: "bg-emerald-50 border-emerald-200", darkColor: "dark:bg-emerald-950/30 dark:border-emerald-800/40" },
 ];
+
+export const LEAD_SOURCES: LeadSource[] = ["Meta Ads", "Referral", "Cold Outreach", "Inbound", "GHL", "Other"];
 
 export const PRODUCTS: Product[] = [
   "DFY Custom App Build",
@@ -43,7 +47,7 @@ export interface Salesperson {
   name: string;
   phone: string;
   email: string;
-  role: "founder" | "rep";
+  role: "founder" | "rep" | "setter";
   createdAt: string;
 }
 
@@ -58,6 +62,8 @@ export interface Deal {
   commissionPaid: number;
   closeDate: string;
   stage: PipelineStage;
+  leadSource: LeadSource;
+  setterId: string | null;
   notes: string;
   callIds: string[];
   createdAt: string;
