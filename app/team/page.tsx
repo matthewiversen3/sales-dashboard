@@ -23,17 +23,17 @@ export default function TeamPage() {
 
   if (!loaded) return <div className="animate-pulse h-96" />;
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
     if (editId) {
-      updateSalesperson(editId, { name, phone, email, role });
+      await updateSalesperson(editId, { name, phone, email, role });
     } else {
-      addSalesperson({ name, phone, email, role });
+      await addSalesperson({ name, phone, email, role });
     }
     resetForm();
     setOpen(false);
-    refresh();
+    await refresh();
   }
 
   function handleEdit(sp: (typeof salespeople)[0]) {
@@ -139,7 +139,7 @@ export default function TeamPage() {
                       <button onClick={() => handleEdit(sp)} className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
-                      <button onClick={() => { deleteSalesperson(sp.id); refresh(); }} className="p-1.5 rounded-md hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors">
+                      <button onClick={async () => { await deleteSalesperson(sp.id); await refresh(); }} className="p-1.5 rounded-md hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors">
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>

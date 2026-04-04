@@ -93,7 +93,7 @@ export default function BoardPage() {
     setActiveDragId(event.active.id as string);
   }
 
-  function handleDragEnd(event: DragEndEvent) {
+  async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     setActiveDragId(null);
     if (!over) return;
@@ -103,16 +103,16 @@ export default function BoardPage() {
     const deal = deals.find((d) => d.id === dealId);
     if (!deal || deal.stage === newStage) return;
 
-    moveDeal(dealId, newStage);
+    await moveDeal(dealId, newStage);
 
     // Auto-generate payments when moving to "closed" or later if none exist
     const dealPayments = payments.filter((p) => p.dealId === dealId);
     if ((newStage === "closed" || newStage === "collecting") && dealPayments.length === 0 && deal.totalAmount > 0) {
-      const pmts = generatePaymentSchedule({ ...deal, stage: newStage });
-      generateReminders({ ...deal, stage: newStage }, pmts);
+      const pmts = await generatePaymentSchedule({ ...deal, stage: newStage });
+      await generateReminders({ ...deal, stage: newStage }, pmts);
     }
 
-    refresh();
+    await refresh();
   }
 
   // Add deal form
@@ -151,11 +151,11 @@ export default function BoardPage() {
     setSetterId("");
   }
 
-  function handleAddDeal(e: React.FormEvent) {
+  async function handleAddDeal(e: React.FormEvent) {
     e.preventDefault();
     if (!clientName.trim() || !salespersonId) return;
 
-    const deal = addDeal({
+    const deal = await addDeal({
       clientName,
       salespersonId,
       product,
@@ -172,16 +172,16 @@ export default function BoardPage() {
     });
 
     if (addStage !== "lead" && addStage !== "proposal" && parseFloat(totalAmount) > 0) {
-      const pmts = generatePaymentSchedule(deal);
-      generateReminders(deal, pmts);
+      const pmts = await generatePaymentSchedule(deal);
+      await generateReminders(deal, pmts);
     }
 
     resetForm();
     setAddOpen(false);
-    refresh();
+    await refresh();
   }
 
-  function handleMoveStage(dealId: string, direction: "left" | "right") {
+  async function handleMoveStage(dealId: string, direction: "left" | "right") {
     const deal = deals.find((d) => d.id === dealId);
     if (!deal) return;
     const stageKeys = PIPELINE_STAGES.map((s) => s.key);
@@ -190,22 +190,22 @@ export default function BoardPage() {
     if (newIdx < 0 || newIdx >= stageKeys.length) return;
 
     const newStage = stageKeys[newIdx];
-    moveDeal(dealId, newStage);
+    await moveDeal(dealId, newStage);
 
     // Auto-generate payments when moving to "closed" or later if none exist
     const dealPayments = payments.filter((p) => p.dealId === dealId);
     if ((newStage === "closed" || newStage === "collecting") && dealPayments.length === 0 && deal.totalAmount > 0) {
-      const pmts = generatePaymentSchedule({ ...deal, stage: newStage });
-      generateReminders({ ...deal, stage: newStage }, pmts);
+      const pmts = await generatePaymentSchedule({ ...deal, stage: newStage });
+      await generateReminders({ ...deal, stage: newStage }, pmts);
     }
 
-    refresh();
+    await refresh();
   }
 
-  function handleDeleteDeal(dealId: string) {
-    deleteDeal(dealId);
+  async function handleDeleteDeal(dealId: string) {
+    await deleteDeal(dealId);
     setDetailDeal(null);
-    refresh();
+    await refresh();
   }
 
   // Detail panel
@@ -426,7 +426,7 @@ export default function BoardPage() {
                   {PIPELINE_STAGES.map((s) => (
                     <button
                       key={s.key}
-                      onClick={() => { moveDeal(selectedDeal.id, s.key); refresh(); }}
+                      onClick={async () => { await moveDeal(selectedDeal.id, s.key); await refresh(); }}
                       className={cn(
                         "px-2.5 py-1 rounded-md text-[10px] font-semibold uppercase tracking-wider transition-colors border",
                         selectedDeal.stage === s.key ? "bg-primary text-primary-foreground border-primary" : "text-muted-foreground border-border hover:bg-muted"
@@ -545,11 +545,11 @@ export default function BoardPage() {
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-semibold">{formatCurrency(payment.amount)}</span>
                             {payment.verified ? (
-                              <button onClick={() => { unverifyPayment(payment.id); refresh(); }} className="text-[10px] text-muted-foreground hover:text-foreground">
+                              <button onClick={async () => { await unverifyPayment(payment.id); await refresh(); }} className="text-[10px] text-muted-foreground hover:text-foreground">
                                 <Undo2 className="h-3 w-3" />
                               </button>
                             ) : (
-                              <Button size="sm" className="h-6 text-[10px] px-2" onClick={() => { verifyPayment(payment.id); refresh(); }}>
+                              <Button size="sm" className="h-6 text-[10px] px-2" onClick={async () => { await verifyPayment(payment.id); await refresh(); }}>
                                 <Check className="h-3 w-3 mr-0.5" />
                                 Verify
                               </Button>

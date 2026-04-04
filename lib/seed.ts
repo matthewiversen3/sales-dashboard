@@ -1,5 +1,3 @@
-"use client";
-
 import {
   addSalesperson,
   addDeal,
@@ -37,7 +35,6 @@ const seedTeam = [
 
 function getSeedDeals(wayneId: string, joshId: string, matthewId: string, setterIdVal: string): (SeedDeal & { salespersonId: string })[] {
   return [
-    // Wayne's deals
     {
       salespersonId: wayneId,
       clientName: "Rivera Fitness",
@@ -110,8 +107,6 @@ function getSeedDeals(wayneId: string, joshId: string, matthewId: string, setter
       setterId: setterIdVal,
       notes: "Discovery call done. Needs follow-up.",
     },
-
-    // Josh's deals
     {
       salespersonId: joshId,
       clientName: "Iron Valley Gym",
@@ -189,8 +184,6 @@ function getSeedDeals(wayneId: string, joshId: string, matthewId: string, setter
       stage: "lead",
       notes: "Inbound lead from website.",
     },
-
-    // Matthew's deals (solo calls)
     {
       salespersonId: matthewId,
       clientName: "Elite Performance",
@@ -229,13 +222,13 @@ const seedCalls = [
   { title: "Check-in - Elite Performance", date: "2026-03-20", duration: 12, participants: ["Matthew"], summary: "Month 1 payment collected. Client happy with app progress. Discussing upsell for second location." },
 ];
 
-export function seedDemoData() {
-  const data = getData();
+export async function seedDemoData() {
+  const data = await getData();
   if (data.salespeople.length > 0) return;
 
   const reps: Record<string, string> = {};
   for (const person of seedTeam) {
-    const sp = addSalesperson(person);
+    const sp = await addSalesperson(person);
     reps[person.name] = sp.id;
   }
 
@@ -243,7 +236,7 @@ export function seedDemoData() {
 
   const dealMap: Record<string, string> = {};
   for (const dealDef of deals) {
-    const deal = addDeal({
+    const deal = await addDeal({
       salespersonId: dealDef.salespersonId,
       clientName: dealDef.clientName,
       product: dealDef.product,
@@ -261,27 +254,25 @@ export function seedDemoData() {
 
     dealMap[dealDef.clientName] = deal.id;
 
-    // Only generate payments for deals past the lead/proposal stage
     if (dealDef.stage !== "lead" && dealDef.stage !== "proposal") {
-      const payments = generatePaymentSchedule(deal);
-      generateReminders(deal, payments);
+      const payments = await generatePaymentSchedule(deal);
+      await generateReminders(deal, payments);
 
       if (dealDef.verifyAll) {
         for (const p of payments) {
-          verifyPayment(p.id);
+          await verifyPayment(p.id);
         }
       } else if (dealDef.verifyFirst && payments.length > 0) {
-        verifyPayment(payments[0].id);
+        await verifyPayment(payments[0].id);
       }
     }
   }
 
-  // Seed calls
   for (const callDef of seedCalls) {
     const primaryParticipant = callDef.participants.find((p) => p !== "Matthew") || "Matthew";
     const spId = reps[primaryParticipant];
 
-    const call = addCall({
+    const call = await addCall({
       title: callDef.title,
       date: callDef.date,
       duration: callDef.duration,
@@ -293,10 +284,9 @@ export function seedDemoData() {
       source: "tldv",
     });
 
-    // Link calls to matching deals by client name
     const clientName = callDef.title.replace(/^.*?-\s*/, "");
     if (dealMap[clientName]) {
-      linkCallToDeal(call.id, dealMap[clientName]);
+      await linkCallToDeal(call.id, dealMap[clientName]);
     }
   }
 }

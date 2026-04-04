@@ -100,7 +100,7 @@ export default function CallsPage() {
 
         const spId = assignCall(meeting.participants);
 
-        addCall({
+        await addCall({
           title: meeting.title,
           date: meeting.date,
           duration: meeting.duration,
@@ -115,8 +115,8 @@ export default function CallsPage() {
         imported++;
       }
 
-      updateSettings({ tldvLastSync: data.syncedAt });
-      refresh();
+      await updateSettings({ tldvLastSync: data.syncedAt });
+      await refresh();
       setSyncResult({
         type: "success",
         message: imported > 0
@@ -130,9 +130,9 @@ export default function CallsPage() {
     }
   }
 
-  function handleSaveApiKey() {
-    updateSettings({ tldvApiKey: apiKey.trim() });
-    refresh();
+  async function handleSaveApiKey() {
+    await updateSettings({ tldvApiKey: apiKey.trim() });
+    await refresh();
     setSettingsOpen(false);
     setSyncResult(null);
   }

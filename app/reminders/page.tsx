@@ -65,23 +65,23 @@ export default function RemindersPage() {
       });
 
       if (res.ok) {
-        updateReminder(reminderId, {
+        await updateReminder(reminderId, {
           status: "sent",
           sentAt: new Date().toISOString(),
         });
       } else {
-        updateReminder(reminderId, { status: "failed" });
+        await updateReminder(reminderId, { status: "failed" });
       }
     } catch {
       // If API isn't configured, mark as sent locally for demo
-      updateReminder(reminderId, {
+      await updateReminder(reminderId, {
         status: "sent",
         sentAt: new Date().toISOString(),
       });
     }
 
     setSending(null);
-    refresh();
+    await refresh();
   }
 
   async function handleSendAll() {

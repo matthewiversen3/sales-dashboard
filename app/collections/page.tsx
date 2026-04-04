@@ -22,14 +22,14 @@ export default function CollectionsPage() {
 
   if (!loaded) return <div className="animate-pulse h-96" />;
 
-  function handleVerify(paymentId: string) {
-    verifyPayment(paymentId);
-    refresh();
+  async function handleVerify(paymentId: string) {
+    await verifyPayment(paymentId);
+    await refresh();
   }
 
-  function handleUnverify(paymentId: string) {
-    unverifyPayment(paymentId);
-    refresh();
+  async function handleUnverify(paymentId: string) {
+    await unverifyPayment(paymentId);
+    await refresh();
   }
 
   // Build enriched payment list

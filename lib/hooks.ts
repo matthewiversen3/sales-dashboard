@@ -2,33 +2,31 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { getData, StoreData } from "./store";
-import { seedDemoData } from "./seed";
+
+const defaultData: StoreData = {
+  salespeople: [],
+  deals: [],
+  payments: [],
+  reminders: [],
+  calls: [],
+  settings: { tldvApiKey: "", tldvLastSync: null, ghlApiKey: "", ghlLocationId: "", ghlLastSync: null },
+};
 
 export function useStore() {
-  const [data, setData] = useState<StoreData>({
-    salespeople: [],
-    deals: [],
-    payments: [],
-    reminders: [],
-    calls: [],
-    settings: { tldvApiKey: "", tldvLastSync: null, ghlApiKey: "", ghlLocationId: "", ghlLastSync: null },
-  });
+  const [data, setData] = useState<StoreData>(defaultData);
   const [loaded, setLoaded] = useState(false);
 
-  const refresh = useCallback(() => {
-    setData(getData());
+  const refresh = useCallback(async () => {
+    try {
+      const d = await getData();
+      setData(d);
+    } catch (err) {
+      console.error("Failed to load data from Supabase:", err);
+    }
   }, []);
 
   useEffect(() => {
-    seedDemoData();
-    refresh();
-    setLoaded(true);
-  }, [refresh]);
-
-  useEffect(() => {
-    const handler = () => refresh();
-    window.addEventListener("storage", handler);
-    return () => window.removeEventListener("storage", handler);
+    refresh().then(() => setLoaded(true));
   }, [refresh]);
 
   return { ...data, refresh, loaded };

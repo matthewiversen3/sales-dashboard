@@ -33,16 +33,16 @@ export default function SettingsPage() {
 
   if (!loaded) return <div className="animate-pulse h-96" />;
 
-  function saveTldv() {
-    updateSettings({ tldvApiKey: tldvKey.trim() });
-    refresh();
+  async function saveTldv() {
+    await updateSettings({ tldvApiKey: tldvKey.trim() });
+    await refresh();
     setTldvSaved(true);
     setTimeout(() => setTldvSaved(false), 2000);
   }
 
-  function saveGhl() {
-    updateSettings({ ghlApiKey: ghlKey.trim(), ghlLocationId: ghlLocationId.trim() });
-    refresh();
+  async function saveGhl() {
+    await updateSettings({ ghlApiKey: ghlKey.trim(), ghlLocationId: ghlLocationId.trim() });
+    await refresh();
     setGhlSaved(true);
     setTimeout(() => setGhlSaved(false), 2000);
   }
@@ -83,8 +83,8 @@ export default function SettingsPage() {
         (c: { name: string }) => !existingClients.has(c.name.toLowerCase())
       );
 
-      updateSettings({ ghlLastSync: data.syncedAt });
-      refresh();
+      await updateSettings({ ghlLastSync: data.syncedAt });
+      await refresh();
 
       setGhlResult({
         type: "success",
