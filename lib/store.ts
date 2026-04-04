@@ -7,6 +7,11 @@ export interface AppSettings {
   ghlApiKey: string;
   ghlLocationId: string;
   ghlLastSync: string | null;
+  anthropicApiKey: string;
+  blandApiKey: string;
+  blandPathwayId: string;
+  aiCallingEnabled: string;
+  aiCallingGreeting: string;
 }
 
 export interface StoreData {
@@ -24,6 +29,11 @@ const defaultSettings: AppSettings = {
   ghlApiKey: "",
   ghlLocationId: "",
   ghlLastSync: null,
+  anthropicApiKey: "",
+  blandApiKey: "",
+  blandPathwayId: "",
+  aiCallingEnabled: "false",
+  aiCallingGreeting: "",
 };
 
 // ── Helpers: map DB rows (snake_case) ↔ app objects (camelCase) ──

@@ -9,7 +9,7 @@ const defaultData: StoreData = {
   payments: [],
   reminders: [],
   calls: [],
-  settings: { tldvApiKey: "", tldvLastSync: null, ghlApiKey: "", ghlLocationId: "", ghlLastSync: null },
+  settings: { tldvApiKey: "", tldvLastSync: null, ghlApiKey: "", ghlLocationId: "", ghlLastSync: null, anthropicApiKey: "", blandApiKey: "", blandPathwayId: "", aiCallingEnabled: "false", aiCallingGreeting: "" },
 };
 
 export function useStore() {
