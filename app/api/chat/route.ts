@@ -4,126 +4,142 @@ import { createServiceClient } from "@/lib/supabase";
 
 const GHL_API_BASE = "https://services.leadconnectorhq.com";
 
+// Helper: get GHL credentials from settings
+async function getGhlCreds(supabase: ReturnType<typeof createServiceClient>) {
+  const { data } = await supabase
+    .from("app_settings")
+    .select("*")
+    .in("key", ["ghlApiKey", "ghlLocationId"]);
+  const ghlKey = data?.find((s: Record<string, unknown>) => s.key === "ghlApiKey")?.value;
+  const ghlLocId = data?.find((s: Record<string, unknown>) => s.key === "ghlLocationId")?.value;
+  return { ghlKey, ghlLocId };
+}
+
+// Helper: search GHL contact by name
+async function findGhlContact(name: string, ghlKey: string, ghlLocId: string) {
+  try {
+    const res = await fetch(
+      `${GHL_API_BASE}/contacts/search/duplicate?locationId=${ghlLocId}&name=${encodeURIComponent(name)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${ghlKey}`,
+          Version: "2021-07-28",
+        },
+      }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.contact || null;
+  } catch {
+    return null;
+  }
+}
+
+// Helper: update GHL contact tags
+async function updateGhlContact(
+  contactId: string,
+  existingTags: string[],
+  newTags: string[],
+  ghlKey: string
+) {
+  const allTags = [...new Set([...existingTags, ...newTags])];
+  try {
+    const res = await fetch(`${GHL_API_BASE}/contacts/${contactId}`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${ghlKey}`,
+        Version: "2021-07-28",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ tags: allTags }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+// Map dashboard stage to GHL tags
+function stageToGhlTags(stage: string, paymentType: string): string[] {
+  const tags: string[] = [];
+  switch (stage) {
+    case "lead":
+      tags.push("lead");
+      break;
+    case "proposal":
+      tags.push("proposal");
+      break;
+    case "closed":
+      tags.push("closed", "won");
+      break;
+    case "collecting":
+      tags.push("closed", "won", "collecting");
+      break;
+    case "paid":
+      tags.push("closed", "won", "paid");
+      break;
+  }
+  if (paymentType) tags.push(paymentType.toLowerCase().replace(/\s+/g, "-"));
+  return tags;
+}
+
 // Tool definitions for Claude
 const tools: Anthropic.Tool[] = [
   {
     name: "add_deal",
     description:
-      "Add a new deal to the sales pipeline. Use this when a salesperson reports closing a sale or getting a new lead.",
+      "Add a new deal to the sales pipeline AND automatically update the contact in GoHighLevel with the right tags and pipeline stage. Use when a salesperson reports a sale or new lead.",
     input_schema: {
       type: "object" as const,
       properties: {
         client_name: { type: "string", description: "Client/business name" },
         salesperson_name: {
           type: "string",
-          description:
-            "Name of the salesperson (e.g. Wayne, Josh, Matthew). If not specified, try to infer from context.",
+          description: "Name of the salesperson. If the user says 'I', infer from context or default to Matthew.",
         },
         product: {
           type: "string",
           enum: ["DFY Custom App Build", "DIY Custom App Build"],
-          description: "Product sold",
         },
         payment_type: {
           type: "string",
-          enum: [
-            "PIF",
-            "DEP",
-            "Split",
-            "Inhouse Fin",
-            "Fin Payment",
-            "10K Split 5/5",
-            "9K Climb",
-            "12K *",
-          ],
-          description:
-            "Payment type. PIF = paid in full, DEP = deposit, Split = split payments, Inhouse Fin = in-house financing",
+          enum: ["PIF", "DEP", "Split", "Inhouse Fin", "Fin Payment", "10K Split 5/5", "9K Climb", "12K *"],
+          description: "PIF = paid in full. If they mention paying over time, use 'Inhouse Fin' or 'Split'.",
         },
         total_amount: { type: "number", description: "Total deal amount in dollars" },
-        commission_pct: {
+        initial_payment: {
           type: "number",
-          description: "Commission percentage, default 10",
+          description: "Amount paid today/upfront, if mentioned. The rest will be split into the payment plan.",
         },
-        close_date: {
-          type: "string",
-          description: "Close date in YYYY-MM-DD format. Default to today if not specified.",
+        remaining_months: {
+          type: "number",
+          description: "Number of months to split the remaining balance over, if mentioned.",
         },
+        commission_pct: { type: "number", description: "Commission %, default 10" },
+        close_date: { type: "string", description: "YYYY-MM-DD. Default today." },
         stage: {
           type: "string",
           enum: ["lead", "proposal", "closed", "collecting", "paid"],
-          description:
-            "Pipeline stage. Use 'closed' if they just sold it, 'collecting' if payments are being collected, 'paid' if fully paid.",
+          description: "Use 'closed' if just sold. 'collecting' if there's a payment plan. 'paid' if fully paid.",
         },
         lead_source: {
           type: "string",
-          enum: [
-            "Meta Ads",
-            "Referral",
-            "Cold Outreach",
-            "Inbound",
-            "GHL",
-            "Other",
-          ],
-          description: "How the lead was acquired",
+          enum: ["Meta Ads", "Referral", "Cold Outreach", "Inbound", "GHL", "Other"],
         },
-        notes: {
-          type: "string",
-          description: "Any additional notes about the deal",
-        },
+        notes: { type: "string" },
       },
       required: ["client_name", "total_amount", "product", "stage"],
     },
   },
   {
-    name: "create_payment_plan",
-    description:
-      "Create a custom payment plan for a deal. Use when the user describes specific payment amounts and dates.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        deal_id: {
-          type: "string",
-          description: "The deal ID to create payments for",
-        },
-        payments: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              amount: { type: "number", description: "Payment amount" },
-              due_date: {
-                type: "string",
-                description: "Due date YYYY-MM-DD",
-              },
-              label: {
-                type: "string",
-                description: "Label like 'Deposit', 'Month 1', etc.",
-              },
-            },
-            required: ["amount", "due_date", "label"],
-          },
-          description: "Array of payment installments",
-        },
-      },
-      required: ["deal_id", "payments"],
-    },
-  },
-  {
     name: "update_deal",
-    description:
-      "Update an existing deal's stage, notes, or other fields. Use when user says they moved a deal forward, lost a deal, etc.",
+    description: "Update an existing deal and sync the change to GHL.",
     input_schema: {
       type: "object" as const,
       properties: {
-        client_name: {
-          type: "string",
-          description: "Client name to find the deal",
-        },
-        stage: {
-          type: "string",
-          enum: ["lead", "proposal", "closed", "collecting", "paid"],
-        },
-        notes: { type: "string", description: "Updated notes" },
+        client_name: { type: "string", description: "Client name to find the deal" },
+        stage: { type: "string", enum: ["lead", "proposal", "closed", "collecting", "paid"] },
+        notes: { type: "string" },
         total_amount: { type: "number" },
         payment_type: { type: "string" },
       },
@@ -132,54 +148,24 @@ const tools: Anthropic.Tool[] = [
   },
   {
     name: "verify_payment",
-    description:
-      "Mark a payment as collected/verified. Use when a salesperson confirms they collected a payment.",
+    description: "Mark a payment as collected/verified.",
     input_schema: {
       type: "object" as const,
       properties: {
-        client_name: {
-          type: "string",
-          description: "Client name to find the deal",
-        },
-        payment_label: {
-          type: "string",
-          description:
-            "Which payment to verify, e.g. 'Month 1', 'Deposit', 'Full Payment'",
-        },
+        client_name: { type: "string" },
+        payment_label: { type: "string", description: "e.g. 'Month 1', 'Deposit', 'Full Payment'. If not specified, verifies the next unpaid one." },
       },
       required: ["client_name"],
     },
   },
   {
-    name: "update_ghl_tags",
-    description:
-      "Update tags on a contact in GoHighLevel CRM. Use after adding or updating a deal to keep GHL in sync.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        contact_name: { type: "string", description: "Contact name in GHL" },
-        tags: {
-          type: "array",
-          items: { type: "string" },
-          description:
-            "Tags to set, e.g. ['closed', 'dfy', 'pif'] or ['lead', 'meta-ads']",
-        },
-      },
-      required: ["contact_name", "tags"],
-    },
-  },
-  {
     name: "get_dashboard_summary",
-    description:
-      "Get a summary of the current dashboard state — deals, pipeline totals, outstanding payments, etc.",
-    input_schema: {
-      type: "object" as const,
-      properties: {},
-    },
+    description: "Get current pipeline stats, deal counts, outstanding payments.",
+    input_schema: { type: "object" as const, properties: {} },
   },
   {
     name: "add_team_member",
-    description: "Add a new salesperson to the team.",
+    description: "Add a new salesperson.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -209,34 +195,30 @@ async function executeTool(
       if (input.salesperson_name) {
         const match = sps?.find(
           (s: Record<string, unknown>) =>
-            (s.name as string)
-              .toLowerCase()
-              .includes(
-                (input.salesperson_name as string).toLowerCase()
-              )
+            (s.name as string).toLowerCase().includes((input.salesperson_name as string).toLowerCase())
         );
         if (match) spId = match.id;
       }
+      if (!spId) return { result: "No salespeople found. Add a team member first.", actions };
 
-      if (!spId) {
-        return {
-          result: "No salespeople found. Add a team member first.",
-          actions,
-        };
-      }
+      const stage = (input.stage as string) || "closed";
+      const paymentType = (input.payment_type as string) || "PIF";
+      const totalAmount = input.total_amount as number;
+      const closeDate = (input.close_date as string) || new Date().toISOString().split("T")[0];
 
+      // Create the deal
       const { data: deal, error } = await supabase
         .from("deals")
         .insert({
           salesperson_id: spId,
           client_name: input.client_name,
           product: input.product || "DFY Custom App Build",
-          payment_type: input.payment_type || "PIF",
-          total_amount: input.total_amount,
+          payment_type: paymentType,
+          total_amount: totalAmount,
           commission_pct: input.commission_pct || 10,
           commission_paid: 0,
-          close_date: input.close_date || new Date().toISOString().split("T")[0],
-          stage: input.stage || "closed",
+          close_date: closeDate,
+          stage,
           lead_source: input.lead_source || "Other",
           notes: input.notes || "",
           call_ids: [],
@@ -244,68 +226,117 @@ async function executeTool(
         .select()
         .single();
 
-      if (error)
-        return { result: `Error creating deal: ${error.message}`, actions };
+      if (error) return { result: `Error creating deal: ${error.message}`, actions };
+      actions.push(`Created deal: ${input.client_name} — $${totalAmount}`);
 
-      actions.push(
-        `Created deal: ${input.client_name} — $${input.total_amount}`
-      );
-      return {
-        result: `Deal created successfully! ${input.client_name} for $${input.total_amount}. Deal ID: ${deal.id}. Stage: ${input.stage || "closed"}.`,
-        actions,
-      };
-    }
+      // Auto-create payment plan if there's an initial payment + remaining months
+      const initialPayment = input.initial_payment as number | undefined;
+      const remainingMonths = input.remaining_months as number | undefined;
 
-    case "create_payment_plan": {
-      const payments = input.payments as Array<{
-        amount: number;
-        due_date: string;
-        label: string;
-      }>;
-      for (const p of payments) {
-        await supabase.from("payments").insert({
-          deal_id: input.deal_id,
-          amount: p.amount,
-          due_date: p.due_date,
-          paid_date: null,
-          verified: false,
-          month_label: p.label,
-        });
-        actions.push(`Payment scheduled: ${p.label} — $${p.amount} due ${p.due_date}`);
-      }
+      if (initialPayment && remainingMonths && remainingMonths > 0) {
+        const remaining = totalAmount - initialPayment;
+        const monthlyAmount = Math.round((remaining / remainingMonths) * 100) / 100;
 
-      // Also create reminders
-      const { data: deal } = await supabase
-        .from("deals")
-        .select("salesperson_id")
-        .eq("id", input.deal_id)
-        .single();
-      if (deal) {
-        for (const p of payments) {
-          const dueDate = new Date(p.due_date);
-          const reminderDate = new Date(dueDate);
-          reminderDate.setDate(reminderDate.getDate() - 3);
-          // Get payment id
-          const { data: pmtData } = await supabase
-            .from("payments")
-            .select("id")
-            .eq("deal_id", input.deal_id)
-            .eq("month_label", p.label)
-            .single();
-          if (pmtData) {
+        // Initial payment (verified today)
+        const { data: initPmt } = await supabase.from("payments").insert({
+          deal_id: deal.id,
+          amount: initialPayment,
+          due_date: closeDate,
+          paid_date: closeDate,
+          verified: true,
+          month_label: "Initial Payment",
+        }).select().single();
+        actions.push(`Payment: Initial $${initialPayment} — paid today`);
+
+        // Monthly payments
+        const spIdForReminder = spId;
+        for (let i = 1; i <= remainingMonths; i++) {
+          const dueDate = new Date(closeDate);
+          dueDate.setMonth(dueDate.getMonth() + i);
+          const amt = i === remainingMonths ? remaining - monthlyAmount * (remainingMonths - 1) : monthlyAmount;
+
+          const { data: pmt } = await supabase.from("payments").insert({
+            deal_id: deal.id,
+            amount: amt,
+            due_date: dueDate.toISOString().split("T")[0],
+            paid_date: null,
+            verified: false,
+            month_label: `Month ${i}`,
+          }).select().single();
+          actions.push(`Payment: Month ${i} — $${amt.toFixed(2)} due ${dueDate.toISOString().split("T")[0]}`);
+
+          // Create reminder 3 days before
+          if (pmt) {
+            const reminderDate = new Date(dueDate);
+            reminderDate.setDate(reminderDate.getDate() - 3);
             await supabase.from("reminders").insert({
-              payment_id: pmtData.id,
-              salesperson_id: deal.salesperson_id,
+              payment_id: pmt.id,
+              salesperson_id: spIdForReminder,
               scheduled_for: reminderDate.toISOString(),
               sent_at: null,
               status: "pending",
             });
           }
         }
+        actions.push(`Reminders set for 3 days before each payment`);
+      } else if (stage !== "lead" && stage !== "proposal" && totalAmount > 0) {
+        // Default payment schedule based on payment type
+        // PIF = one payment, Split = 2, Inhouse Fin = 3
+        let installments = 1;
+        if (paymentType === "Split" || paymentType === "10K Split 5/5" || paymentType === "DEP") installments = 2;
+        else if (paymentType === "Inhouse Fin" || paymentType === "Fin Payment" || paymentType === "9K Climb" || paymentType === "12K *") installments = 3;
+
+        const perPayment = Math.round((totalAmount / installments) * 100) / 100;
+        for (let i = 0; i < installments; i++) {
+          const dueDate = new Date(closeDate);
+          dueDate.setMonth(dueDate.getMonth() + i);
+          const amt = i === installments - 1 ? totalAmount - perPayment * (installments - 1) : perPayment;
+          const label = installments === 1 ? "Full Payment" : i === 0 && paymentType === "DEP" ? "Deposit" : `Month ${i + 1}`;
+
+          const { data: pmt } = await supabase.from("payments").insert({
+            deal_id: deal.id,
+            amount: amt,
+            due_date: dueDate.toISOString().split("T")[0],
+            paid_date: null,
+            verified: false,
+            month_label: label,
+          }).select().single();
+
+          if (pmt && installments > 1) {
+            const reminderDate = new Date(dueDate);
+            reminderDate.setDate(reminderDate.getDate() - 3);
+            await supabase.from("reminders").insert({
+              payment_id: pmt.id,
+              salesperson_id: spId,
+              scheduled_for: reminderDate.toISOString(),
+              sent_at: null,
+              status: "pending",
+            });
+          }
+        }
+        actions.push(`Payment schedule created (${installments} installment${installments > 1 ? "s" : ""})`);
       }
 
+      // Auto-update GHL
+      const { ghlKey, ghlLocId } = await getGhlCreds(supabase);
+      if (ghlKey && ghlLocId) {
+        const contact = await findGhlContact(input.client_name as string, ghlKey, ghlLocId);
+        if (contact) {
+          const ghlTags = stageToGhlTags(stage, paymentType);
+          const ok = await updateGhlContact(contact.id, contact.tags || [], ghlTags, ghlKey);
+          if (ok) {
+            actions.push(`GHL updated: ${input.client_name} tagged [${ghlTags.join(", ")}]`);
+          } else {
+            actions.push(`GHL tag update failed for ${input.client_name}`);
+          }
+        } else {
+          actions.push(`GHL: "${input.client_name}" not found in contacts — add them in GHL to sync`);
+        }
+      }
+
+      const spName = sps?.find((s: Record<string, unknown>) => s.id === spId)?.name || "Unknown";
       return {
-        result: `Payment plan created with ${payments.length} installments. Reminders set for 3 days before each due date.`,
+        result: `Deal created: ${input.client_name} — $${totalAmount} (${stage}). Assigned to ${spName}. Deal ID: ${deal.id}.${initialPayment ? ` Payment plan: $${initialPayment} today + $${(totalAmount - initialPayment).toFixed(2)} over ${remainingMonths} months.` : ""}`,
         actions,
       };
     }
@@ -315,12 +346,9 @@ async function executeTool(
         .from("deals")
         .select("*")
         .ilike("client_name", `%${input.client_name}%`);
-      if (!deals || deals.length === 0) {
-        return {
-          result: `No deal found for "${input.client_name}"`,
-          actions,
-        };
-      }
+      if (!deals || deals.length === 0)
+        return { result: `No deal found for "${input.client_name}"`, actions };
+
       const deal = deals[0];
       const updates: Record<string, unknown> = {};
       if (input.stage) updates.stage = input.stage;
@@ -329,25 +357,30 @@ async function executeTool(
       if (input.payment_type) updates.payment_type = input.payment_type;
 
       await supabase.from("deals").update(updates).eq("id", deal.id);
-      actions.push(
-        `Updated ${deal.client_name}: ${Object.entries(updates)
-          .map(([k, v]) => `${k}=${v}`)
-          .join(", ")}`
-      );
+      actions.push(`Updated ${deal.client_name}: ${Object.entries(updates).map(([k, v]) => `${k}=${v}`).join(", ")}`);
+
+      // Sync to GHL
+      const { ghlKey, ghlLocId } = await getGhlCreds(supabase);
+      if (ghlKey && ghlLocId) {
+        const contact = await findGhlContact(deal.client_name, ghlKey, ghlLocId);
+        if (contact) {
+          const newStage = (input.stage as string) || (deal.stage as string);
+          const ghlTags = stageToGhlTags(newStage, (input.payment_type as string) || (deal.payment_type as string));
+          const ok = await updateGhlContact(contact.id, contact.tags || [], ghlTags, ghlKey);
+          if (ok) actions.push(`GHL updated: ${deal.client_name} tagged [${ghlTags.join(", ")}]`);
+        }
+      }
+
       return { result: `Deal "${deal.client_name}" updated.`, actions };
     }
 
     case "verify_payment": {
       const { data: deals } = await supabase
         .from("deals")
-        .select("id")
+        .select("id, client_name")
         .ilike("client_name", `%${input.client_name}%`);
-      if (!deals || deals.length === 0) {
-        return {
-          result: `No deal found for "${input.client_name}"`,
-          actions,
-        };
-      }
+      if (!deals || deals.length === 0)
+        return { result: `No deal found for "${input.client_name}"`, actions };
 
       const { data: payments } = await supabase
         .from("payments")
@@ -356,126 +389,49 @@ async function executeTool(
         .eq("verified", false)
         .order("due_date");
 
-      if (!payments || payments.length === 0) {
-        return {
-          result: `No outstanding payments for "${input.client_name}"`,
-          actions,
-        };
-      }
+      if (!payments || payments.length === 0)
+        return { result: `No outstanding payments for "${input.client_name}"`, actions };
 
-      // Find matching payment by label or just take first unverified
       let payment = payments[0];
       if (input.payment_label) {
         const match = payments.find(
           (p: Record<string, unknown>) =>
-            (p.month_label as string)
-              .toLowerCase()
-              .includes((input.payment_label as string).toLowerCase())
+            (p.month_label as string).toLowerCase().includes((input.payment_label as string).toLowerCase())
         );
         if (match) payment = match;
       }
 
       await supabase
         .from("payments")
-        .update({
-          verified: true,
-          paid_date: new Date().toISOString().split("T")[0],
-        })
+        .update({ verified: true, paid_date: new Date().toISOString().split("T")[0] })
         .eq("id", payment.id);
-      actions.push(
-        `Verified payment: ${payment.month_label} — $${payment.amount}`
-      );
+      actions.push(`Verified: ${payment.month_label} — $${payment.amount} for ${deals[0].client_name}`);
+
+      // Check if all payments are now verified → move to "paid"
+      const { data: remaining } = await supabase
+        .from("payments")
+        .select("id")
+        .eq("deal_id", deals[0].id)
+        .eq("verified", false);
+      if (remaining && remaining.length === 0) {
+        await supabase.from("deals").update({ stage: "paid" }).eq("id", deals[0].id);
+        actions.push(`All payments collected — ${deals[0].client_name} moved to Paid`);
+
+        // Update GHL
+        const { ghlKey, ghlLocId } = await getGhlCreds(supabase);
+        if (ghlKey && ghlLocId) {
+          const contact = await findGhlContact(deals[0].client_name, ghlKey, ghlLocId);
+          if (contact) {
+            await updateGhlContact(contact.id, contact.tags || [], ["paid", "closed", "won"], ghlKey);
+            actions.push(`GHL updated: ${deals[0].client_name} tagged [paid]`);
+          }
+        }
+      }
+
       return {
-        result: `Payment verified: ${payment.month_label} ($${payment.amount}) for "${input.client_name}"`,
+        result: `Payment verified: ${payment.month_label} ($${payment.amount}) for "${deals[0].client_name}". ${remaining?.length || 0} payments remaining.`,
         actions,
       };
-    }
-
-    case "update_ghl_tags": {
-      const { data: settings } = await supabase
-        .from("app_settings")
-        .select("*")
-        .in("key", ["ghlApiKey", "ghlLocationId"]);
-
-      const ghlKey = settings?.find(
-        (s: Record<string, unknown>) => s.key === "ghlApiKey"
-      )?.value;
-      const ghlLocId = settings?.find(
-        (s: Record<string, unknown>) => s.key === "ghlLocationId"
-      )?.value;
-
-      if (!ghlKey || !ghlLocId) {
-        actions.push("GHL not configured — tags update skipped");
-        return {
-          result:
-            "GHL API key or Location ID not configured. Skipping tag update. Set them in Settings.",
-          actions,
-        };
-      }
-
-      // Search for contact by name
-      const searchRes = await fetch(
-        `${GHL_API_BASE}/contacts/search/duplicate?locationId=${ghlLocId}&name=${encodeURIComponent(input.contact_name as string)}`,
-        {
-          headers: {
-            Authorization: `Bearer ${ghlKey}`,
-            Version: "2021-07-28",
-          },
-        }
-      );
-
-      if (!searchRes.ok) {
-        actions.push(`GHL contact search failed (${searchRes.status})`);
-        return {
-          result: `Could not find contact "${input.contact_name}" in GHL (${searchRes.status})`,
-          actions,
-        };
-      }
-
-      const searchData = await searchRes.json();
-      const contact = searchData.contact;
-
-      if (!contact) {
-        actions.push(`GHL contact "${input.contact_name}" not found`);
-        return {
-          result: `Contact "${input.contact_name}" not found in GHL. They may need to be added first.`,
-          actions,
-        };
-      }
-
-      // Update tags
-      const updateRes = await fetch(
-        `${GHL_API_BASE}/contacts/${contact.id}`,
-        {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${ghlKey}`,
-            Version: "2021-07-28",
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            tags: [
-              ...(contact.tags || []),
-              ...(input.tags as string[]),
-            ],
-          }),
-        }
-      );
-
-      if (updateRes.ok) {
-        actions.push(
-          `Updated GHL tags for ${input.contact_name}: ${(input.tags as string[]).join(", ")}`
-        );
-        return {
-          result: `GHL tags updated for "${input.contact_name}": ${(input.tags as string[]).join(", ")}`,
-          actions,
-        };
-      } else {
-        return {
-          result: `Failed to update GHL tags (${updateRes.status})`,
-          actions,
-        };
-      }
     }
 
     case "get_dashboard_summary": {
@@ -489,38 +445,15 @@ async function executeTool(
       const payments = paymentsRes.data || [];
       const sps = spsRes.data || [];
 
-      const totalPipeline = deals.reduce(
-        (s: number, d: Record<string, unknown>) =>
-          s + Number(d.total_amount),
-        0
-      );
-      const outstanding = payments
-        .filter((p: Record<string, unknown>) => !p.verified)
-        .reduce(
-          (s: number, p: Record<string, unknown>) => s + Number(p.amount),
-          0
-        );
-      const collected = payments
-        .filter((p: Record<string, unknown>) => p.verified)
-        .reduce(
-          (s: number, p: Record<string, unknown>) => s + Number(p.amount),
-          0
-        );
+      const totalPipeline = deals.reduce((s: number, d: Record<string, unknown>) => s + Number(d.total_amount), 0);
+      const outstanding = payments.filter((p: Record<string, unknown>) => !p.verified).reduce((s: number, p: Record<string, unknown>) => s + Number(p.amount), 0);
+      const collected = payments.filter((p: Record<string, unknown>) => p.verified).reduce((s: number, p: Record<string, unknown>) => s + Number(p.amount), 0);
 
       const byStage: Record<string, number> = {};
-      for (const d of deals) {
-        const stage = d.stage as string;
-        byStage[stage] = (byStage[stage] || 0) + 1;
-      }
+      for (const d of deals) byStage[d.stage as string] = (byStage[d.stage as string] || 0) + 1;
 
       return {
-        result: `Dashboard Summary:
-- ${deals.length} deals, $${totalPipeline.toLocaleString()} total pipeline
-- ${sps.length} team members
-- $${collected.toLocaleString()} collected, $${outstanding.toLocaleString()} outstanding
-- By stage: ${Object.entries(byStage)
-            .map(([k, v]) => `${k}: ${v}`)
-            .join(", ")}`,
+        result: `Dashboard Summary:\n- ${deals.length} deals, $${totalPipeline.toLocaleString()} total pipeline\n- ${sps.length} team members\n- $${collected.toLocaleString()} collected, $${outstanding.toLocaleString()} outstanding\n- By stage: ${Object.entries(byStage).map(([k, v]) => `${k}: ${v}`).join(", ")}`,
         actions,
       };
     }
@@ -532,16 +465,9 @@ async function executeTool(
         email: input.email || "",
         role: input.role || "rep",
       });
-      if (error)
-        return {
-          result: `Error adding team member: ${error.message}`,
-          actions,
-        };
+      if (error) return { result: `Error: ${error.message}`, actions };
       actions.push(`Added team member: ${input.name} (${input.role})`);
-      return {
-        result: `Added ${input.name} as ${input.role} to the team.`,
-        actions,
-      };
+      return { result: `Added ${input.name} as ${input.role}.`, actions };
     }
 
     default:
@@ -552,51 +478,58 @@ async function executeTool(
 export async function POST(req: NextRequest) {
   try {
     const { messages, apiKey } = await req.json();
+    const supabase = createServiceClient();
 
-    const anthropicKey =
-      apiKey || process.env.ANTHROPIC_API_KEY;
+    // Get Anthropic key: request body → Supabase settings → env var
+    let anthropicKey = apiKey || process.env.ANTHROPIC_API_KEY;
+    if (!anthropicKey) {
+      const { data: keyRow } = await supabase
+        .from("app_settings")
+        .select("value")
+        .eq("key", "anthropicApiKey")
+        .single();
+      if (keyRow?.value) anthropicKey = keyRow.value;
+    }
+
     if (!anthropicKey) {
       return NextResponse.json(
-        {
-          error:
-            "No Anthropic API key. Add it in Settings or set ANTHROPIC_API_KEY env var.",
-        },
+        { error: "No Anthropic API key. Add it in Settings → AI Chat Assistant." },
         { status: 400 }
       );
     }
 
     const client = new Anthropic({ apiKey: anthropicKey });
-    const supabase = createServiceClient();
 
     // Get current dashboard context
-    const [dealsRes, spsRes] = await Promise.all([
+    const [dealsRes, spsRes, paymentsRes] = await Promise.all([
       supabase.from("deals").select("id, client_name, stage, total_amount, payment_type, salesperson_id"),
       supabase.from("salespeople").select("id, name, role"),
+      supabase.from("payments").select("deal_id, amount, verified, month_label").eq("verified", false).order("due_date").limit(10),
     ]);
 
-    const systemPrompt = `You are AppRabbit's AI sales assistant. You help the sales team manage their deals, payments, and pipeline through natural conversation.
+    const teamStr = (spsRes.data || []).map((s: Record<string, unknown>) => `${s.name} (${s.role}, id:${s.id})`).join(", ");
+    const dealsStr = (dealsRes.data || []).map((d: Record<string, unknown>) => `${d.client_name} — $${d.total_amount} (${d.stage}, ${d.payment_type})`).join("; ");
+    const outstandingStr = (paymentsRes.data || []).map((p: Record<string, unknown>) => {
+      const deal = (dealsRes.data || []).find((d: Record<string, unknown>) => d.id === p.deal_id);
+      return `${(deal as Record<string, unknown>)?.client_name || "?"}: ${p.month_label} $${p.amount}`;
+    }).join("; ");
 
-Current team: ${(spsRes.data || []).map((s: Record<string, unknown>) => `${s.name} (${s.role})`).join(", ")}
+    const systemPrompt = `You are AppRabbit's AI sales assistant. You update the dashboard and GHL CRM through conversation.
 
-Current deals: ${(dealsRes.data || [])
-      .map(
-        (d: Record<string, unknown>) =>
-          `${d.client_name} — $${d.total_amount} (${d.stage}, ${d.payment_type})`
-      )
-      .join("; ")}
+TEAM: ${teamStr}
+DEALS: ${dealsStr}
+OUTSTANDING PAYMENTS: ${outstandingStr}
+TODAY: ${new Date().toISOString().split("T")[0]}
 
-Today's date: ${new Date().toISOString().split("T")[0]}
+RULES:
+1. When someone says "I sold/closed X", ALWAYS use add_deal. If they say "I", default to Matthew (founder) unless context says otherwise.
+2. If they mention payments over time (e.g. "$1K today, rest over 3 months"), set initial_payment and remaining_months on add_deal. This auto-creates the full payment plan with reminders.
+3. EVERY add_deal and update_deal automatically syncs to GHL — tags are set based on pipeline stage (lead, proposal, closed/won, collecting, paid).
+4. If someone says "mark X as paid" or "collected payment from X", use verify_payment.
+5. Be brief and confirm actions. Show what you did.
+6. Default product is "DFY Custom App Build". Default commission is 10%.
+7. For payment type: if they mention installments/months, use "Inhouse Fin". If split in 2, use "Split". If paid in full, use "PIF".`;
 
-Instructions:
-- When a salesperson tells you about a sale, use add_deal to create it, then create_payment_plan if they describe a custom payment schedule, then update_ghl_tags to sync CRM.
-- Be conversational and concise. Confirm what you did after each action.
-- For payment plans, calculate dates automatically (e.g. "over the next 3 months" = monthly from today).
-- Default commission is 10%. Default product is "DFY Custom App Build" unless they say DIY.
-- If someone says "I sold" or "I closed", the stage should be "closed" or "collecting" depending on payment status.
-- Always try to update GHL tags after creating/updating a deal.
-- When inferring who the salesperson is, if they say "I", check if only one person is chatting. If ambiguous, ask.`;
-
-    // Build messages for Claude
     const claudeMessages: Anthropic.MessageParam[] = messages.map(
       (m: { role: string; content: string }) => ({
         role: m.role as "user" | "assistant",
@@ -606,9 +539,9 @@ Instructions:
 
     let allActions: string[] = [];
     let finalResponse = "";
-
-    // Agentic loop — keep calling Claude until no more tool_use
     let currentMessages = [...claudeMessages];
+
+    // Agentic loop
     for (let i = 0; i < 10; i++) {
       const response = await client.messages.create({
         model: "claude-sonnet-4-20250514",
@@ -618,82 +551,46 @@ Instructions:
         messages: currentMessages,
       });
 
-      // Collect text and tool_use blocks
-      const textBlocks = response.content.filter(
-        (b) => b.type === "text"
-      );
-      const toolBlocks = response.content.filter(
-        (b) => b.type === "tool_use"
-      );
+      const textBlocks = response.content.filter((b) => b.type === "text");
+      const toolBlocks = response.content.filter((b) => b.type === "tool_use");
 
       if (toolBlocks.length === 0) {
-        // No more tools — collect final text
-        finalResponse = textBlocks.map((b) => {
-          if (b.type === "text") return b.text;
-          return "";
-        }).join("");
+        finalResponse = textBlocks.map((b) => (b.type === "text" ? b.text : "")).join("");
         break;
       }
 
-      // Execute tools
       const toolResults: Anthropic.ToolResultBlockParam[] = [];
       for (const block of toolBlocks) {
         if (block.type === "tool_use") {
-          const { result, actions } = await executeTool(
-            block.name,
-            block.input as Record<string, unknown>,
-            supabase
-          );
+          const { result, actions } = await executeTool(block.name, block.input as Record<string, unknown>, supabase);
           allActions.push(...actions);
-          toolResults.push({
-            type: "tool_result",
-            tool_use_id: block.id,
-            content: result,
-          });
+          toolResults.push({ type: "tool_result", tool_use_id: block.id, content: result });
         }
       }
 
-      // Append assistant response + tool results for next iteration
       currentMessages = [
         ...currentMessages,
         { role: "assistant", content: response.content },
         { role: "user", content: toolResults },
       ];
 
-      // If stop_reason is "end_turn", grab text and break
       if (response.stop_reason === "end_turn") {
-        finalResponse = textBlocks.map((b) => {
-          if (b.type === "text") return b.text;
-          return "";
-        }).join("");
+        finalResponse = textBlocks.map((b) => (b.type === "text" ? b.text : "")).join("");
         break;
       }
     }
 
-    // Save messages to DB
+    // Save to chat history
     await supabase.from("chat_messages").insert([
-      {
-        role: "user",
-        content: messages[messages.length - 1].content,
-      },
-      {
-        role: "assistant",
-        content: finalResponse,
-        actions_taken: allActions,
-      },
+      { role: "user", content: messages[messages.length - 1].content },
+      { role: "assistant", content: finalResponse, actions_taken: allActions },
     ]);
 
-    return NextResponse.json({
-      message: finalResponse,
-      actions: allActions,
-    });
+    return NextResponse.json({ message: finalResponse, actions: allActions });
   } catch (error) {
     console.error("Chat error:", error);
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error ? error.message : "Chat request failed",
-      },
+      { error: error instanceof Error ? error.message : "Chat request failed" },
       { status: 500 }
     );
   }
