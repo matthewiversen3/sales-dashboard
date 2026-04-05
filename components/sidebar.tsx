@@ -17,11 +17,13 @@ import {
   Moon,
   Settings,
   MessageSquare,
+  Repeat,
 } from "lucide-react";
 import { useState } from "react";
 
 const navItems = [
   { href: "/chat", label: "Chat", icon: MessageSquare },
+  { href: "/follow-ups", label: "Follow-Ups", icon: Repeat },
   { href: "/", label: "Board", icon: Kanban },
   { href: "/overview", label: "Overview", icon: LayoutDashboard },
   { href: "/collections", label: "Collections", icon: Wallet },

@@ -177,6 +177,54 @@ const tools: Anthropic.Tool[] = [
       required: ["name", "role"],
     },
   },
+  {
+    name: "queue_follow_ups",
+    description:
+      "Queue AI follow-ups for contacts. Can target specific people or all contacts in a stage. Uses a 3-touch sequence: SMS (day 0) → AI Call (day 2) → Email (day 4).",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        stage: {
+          type: "string",
+          enum: ["lead", "proposal", "closed", "collecting"],
+          description: "Target all contacts in this pipeline stage for follow-up",
+        },
+        client_name: {
+          type: "string",
+          description: "Follow up with a specific client by name",
+        },
+        message: {
+          type: "string",
+          description: "Custom follow-up message. If not provided, a default is used.",
+        },
+      },
+    },
+  },
+  {
+    name: "list_follow_ups",
+    description: "Show active/pending follow-ups and their status.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        stage: {
+          type: "string",
+          enum: ["pending", "completed", "paused"],
+          description: "Filter by follow-up status. Default: pending",
+        },
+      },
+    },
+  },
+  {
+    name: "pause_follow_up",
+    description: "Pause or cancel a follow-up for a specific contact.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        client_name: { type: "string", description: "Contact name to pause follow-ups for" },
+      },
+      required: ["client_name"],
+    },
+  },
 ];
 
 // Execute tool calls
@@ -470,6 +518,136 @@ async function executeTool(
       return { result: `Added ${input.name} as ${input.role}.`, actions };
     }
 
+    case "queue_follow_ups": {
+      const targetStage = input.stage as string | undefined;
+      const targetName = input.client_name as string | undefined;
+      const customMessage = input.message as string | undefined;
+
+      let contacts: { name: string; dealId: string; phone?: string; email?: string }[] = [];
+
+      if (targetName) {
+        // Find specific deal
+        const { data: deals } = await supabase
+          .from("deals")
+          .select("id, client_name")
+          .ilike("client_name", `%${targetName}%`);
+        if (deals && deals.length > 0) {
+          contacts = deals.map((d: Record<string, unknown>) => ({
+            name: d.client_name as string,
+            dealId: d.id as string,
+          }));
+        }
+      } else if (targetStage) {
+        // Find all deals in that stage
+        const { data: deals } = await supabase
+          .from("deals")
+          .select("id, client_name")
+          .eq("stage", targetStage);
+        if (deals) {
+          contacts = deals.map((d: Record<string, unknown>) => ({
+            name: d.client_name as string,
+            dealId: d.id as string,
+          }));
+        }
+      }
+
+      if (contacts.length === 0) {
+        return { result: `No contacts found${targetStage ? ` in "${targetStage}" stage` : ` matching "${targetName}"`}.`, actions };
+      }
+
+      // Look up GHL contacts for phone/email/contactId
+      const { ghlKey, ghlLocId } = await getGhlCreds(supabase);
+      let queued = 0;
+
+      for (const contact of contacts) {
+        let ghlContactId = "";
+        let phone = "";
+        let email = "";
+
+        if (ghlKey && ghlLocId) {
+          const ghlContact = await findGhlContact(contact.name, ghlKey, ghlLocId);
+          if (ghlContact) {
+            ghlContactId = ghlContact.id;
+            phone = ghlContact.phone || "";
+            email = ghlContact.email || "";
+          }
+        }
+
+        // Check if already has a pending follow-up
+        const { data: existing } = await supabase
+          .from("follow_ups")
+          .select("id")
+          .eq("contact_name", contact.name)
+          .eq("stage", "pending")
+          .limit(1);
+
+        if (existing && existing.length > 0) continue;
+
+        await supabase.from("follow_ups").insert({
+          deal_id: contact.dealId,
+          contact_name: contact.name,
+          contact_phone: phone,
+          contact_email: email,
+          ghl_contact_id: ghlContactId,
+          stage: "pending",
+          sequence_step: 0,
+          next_action: "sms",
+          next_action_at: new Date().toISOString(),
+          max_attempts: 3,
+          message_template: customMessage || null,
+        });
+        queued++;
+      }
+
+      actions.push(`Queued ${queued} follow-up${queued !== 1 ? "s" : ""} (SMS → Call → Email sequence)`);
+      return {
+        result: `Queued ${queued} follow-up${queued !== 1 ? "s" : ""} for ${targetStage ? `all "${targetStage}" contacts` : `"${targetName}"`}. Sequence: SMS today → AI Call in 2 days → Email in 4 days.`,
+        actions,
+      };
+    }
+
+    case "list_follow_ups": {
+      const filterStage = (input.stage as string) || "pending";
+      const { data: followUps } = await supabase
+        .from("follow_ups")
+        .select("*")
+        .eq("stage", filterStage)
+        .order("next_action_at");
+
+      if (!followUps || followUps.length === 0) {
+        return { result: `No ${filterStage} follow-ups.`, actions };
+      }
+
+      const list = followUps.map((fu: Record<string, unknown>) => {
+        const step = fu.sequence_step as number;
+        const nextAction = fu.next_action as string;
+        const nextAt = new Date(fu.next_action_at as string).toLocaleDateString();
+        const lastResult = fu.last_action_result as string;
+        return `• ${fu.contact_name}: step ${step}/3, next: ${nextAction} on ${nextAt}${lastResult ? ` (last: ${lastResult})` : ""}`;
+      }).join("\n");
+
+      return { result: `${filterStage.charAt(0).toUpperCase() + filterStage.slice(1)} follow-ups (${followUps.length}):\n${list}`, actions };
+    }
+
+    case "pause_follow_up": {
+      const { data: followUps } = await supabase
+        .from("follow_ups")
+        .select("id, contact_name")
+        .ilike("contact_name", `%${input.client_name}%`)
+        .eq("stage", "pending");
+
+      if (!followUps || followUps.length === 0) {
+        return { result: `No pending follow-ups for "${input.client_name}".`, actions };
+      }
+
+      for (const fu of followUps) {
+        await supabase.from("follow_ups").update({ stage: "paused", updated_at: new Date().toISOString() }).eq("id", fu.id);
+      }
+
+      actions.push(`Paused ${followUps.length} follow-up${followUps.length !== 1 ? "s" : ""} for ${followUps[0].contact_name}`);
+      return { result: `Paused follow-ups for "${followUps[0].contact_name}".`, actions };
+    }
+
     default:
       return { result: `Unknown tool: ${name}`, actions };
   }
@@ -528,7 +706,9 @@ RULES:
 4. If someone says "mark X as paid" or "collected payment from X", use verify_payment.
 5. Be brief and confirm actions. Show what you did.
 6. Default product is "DFY Custom App Build". Default commission is 10%.
-7. For payment type: if they mention installments/months, use "Inhouse Fin". If split in 2, use "Split". If paid in full, use "PIF".`;
+7. For payment type: if they mention installments/months, use "Inhouse Fin". If split in 2, use "Split". If paid in full, use "PIF".
+8. FOLLOW-UPS: When someone says "follow up with X" or "reach out to all leads/proposals", use queue_follow_ups. This queues a 3-touch AI sequence: SMS (immediate) → AI Phone Call (day 2) → Email (day 4).
+9. Use list_follow_ups to show current follow-up status. Use pause_follow_up to stop following up with someone (e.g. "don't call Jorge, he's on vacation").`;
 
     const claudeMessages: Anthropic.MessageParam[] = messages.map(
       (m: { role: string; content: string }) => ({
