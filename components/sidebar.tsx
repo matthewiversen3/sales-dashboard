@@ -18,10 +18,12 @@ import {
   Settings,
   MessageSquare,
   Repeat,
+  Zap,
 } from "lucide-react";
 import { useState } from "react";
 
 const navItems = [
+  { href: "/outreach", label: "AI Outreach", icon: Zap },
   { href: "/chat", label: "Chat", icon: MessageSquare },
   { href: "/follow-ups", label: "Follow-Ups", icon: Repeat },
   { href: "/", label: "Board", icon: Kanban },
