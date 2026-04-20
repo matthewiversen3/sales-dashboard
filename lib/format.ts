@@ -23,7 +23,11 @@ export function pluralize(count: number, singular: string, plural?: string): str
 }
 
 export function formatDate(dateStr: string): string {
-  const date = new Date(dateStr + "T00:00:00");
+  // If already an ISO timestamp (contains 'T' or 'Z'), parse directly
+  // Otherwise append T00:00:00 to treat as local date (avoid UTC offset shifting day)
+  const date = dateStr.includes("T") || dateStr.includes("Z")
+    ? new Date(dateStr)
+    : new Date(dateStr + "T00:00:00");
   return date.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
@@ -34,7 +38,9 @@ export function formatDate(dateStr: string): string {
 export function daysUntil(dateStr: string): number {
   const now = new Date();
   now.setHours(0, 0, 0, 0);
-  const target = new Date(dateStr + "T00:00:00");
+  const target = dateStr.includes("T") || dateStr.includes("Z")
+    ? new Date(dateStr)
+    : new Date(dateStr + "T00:00:00");
   const diff = target.getTime() - now.getTime();
   return Math.ceil(diff / (1000 * 60 * 60 * 24));
 }
