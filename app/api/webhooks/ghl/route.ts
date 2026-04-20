@@ -81,16 +81,18 @@ export async function POST(req: NextRequest) {
     (body.name as string) ||
     "New Lead";
 
+  const contact = body.contact as Record<string, unknown> | undefined;
+
   const phone =
     (body.phone as string) ||
     (body.phone_raw as string) ||
-    (body.contact?.phone as string) ||
+    (contact?.phone as string) ||
     null;
 
   const ghlContactId =
     (body.contact_id as string) ||
     (body.id as string) ||
-    (body.contact?.id as string) ||
+    (contact?.id as string) ||
     null;
 
   const source =
