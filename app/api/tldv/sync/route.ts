@@ -15,7 +15,7 @@ interface TldvResponse {
   next?: string;
 }
 
-const TLDV_API_BASE = "https://api.tldv.io/v1alpha1";
+const TLDV_API_BASE = "https://pasta.tldv.io/v1alpha1";
 
 export async function POST(req: NextRequest) {
   try {
@@ -76,6 +76,7 @@ export async function POST(req: NextRequest) {
           duration: Math.round((meeting.duration || 0) / 60),
           participants: meeting.participants?.map((p) => p.name) || [],
           summary,
+          url: `https://tldv.io/app/meetings/${meeting.id}`,
         };
       })
     );
