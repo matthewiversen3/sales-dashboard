@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   Kanban,
   Wallet,
+  DollarSign,
   Users,
   Bell,
   Phone,
@@ -19,19 +20,22 @@ import {
   MessageSquare,
   Repeat,
   Zap,
+  Activity,
 } from "lucide-react";
 import { useState } from "react";
 
 const navItems = [
   { href: "/outreach", label: "AI Outreach", icon: Zap },
   { href: "/chat", label: "Chat", icon: MessageSquare },
+  { href: "/notifications", label: "Notifications", icon: Bell },
   { href: "/follow-ups", label: "Follow-Ups", icon: Repeat },
   { href: "/", label: "Board", icon: Kanban },
   { href: "/overview", label: "Overview", icon: LayoutDashboard },
   { href: "/collections", label: "Collections", icon: Wallet },
+  { href: "/commissions", label: "Commissions", icon: DollarSign },
   { href: "/calls", label: "Calls", icon: Phone },
   { href: "/team", label: "Team", icon: Users },
-  { href: "/reminders", label: "Reminders", icon: Bell },
+  { href: "/systems", label: "Systems", icon: Activity },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
